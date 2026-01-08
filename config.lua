@@ -1,7 +1,7 @@
 Config = {}
 
 -- General garage settings
-Config.UseTarget = false -- Use qb-target interactions instead of DrawText3D
+Config.UseTarget = false -- Use ox_target or qtarget interactions instead of DrawText3D
 Config.VehicleSpawnDistance = 5.0 -- Distance to spawn vehicles from garage point
 Config.SpawnTimeout = 30000 -- Time (in ms) before vehicle spawning times out
 Config.VehicleFadeTime = 2000 -- Time in milliseconds for vehicle fade animation
