@@ -831,6 +831,16 @@ ESX.RegisterServerCallback('dw-garages:server:GetSharedGarageVehicles', function
                     else
                         vehicles[i].owner_name = "Unknown"
                     end
+                    
+                    -- Enrich vehicle data with details from okokvehicleshopv2
+                    if not vehicle.custom_name or vehicle.custom_name == "" then
+                        local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+                        vehicles[i].display_name = vehicleInfo.name
+                        vehicles[i].category = vehicleInfo.category
+                        vehicles[i].top_speed = vehicleInfo.speed
+                    else
+                        vehicles[i].display_name = vehicle.custom_name
+                    end
                 end
                 cb(vehicles)
             else
@@ -849,6 +859,16 @@ function getSharedGarageVehicles(garageId, owner, cb)
                         vehicles[i].owner_name = vehicle.firstname .. ' ' .. vehicle.lastname
                     else
                         vehicles[i].owner_name = "Unknown"
+                    end
+                    
+                    -- Enrich vehicle data with details from okokvehicleshopv2
+                    if not vehicle.custom_name or vehicle.custom_name == "" then
+                        local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+                        vehicles[i].display_name = vehicleInfo.name
+                        vehicles[i].category = vehicleInfo.category
+                        vehicles[i].top_speed = vehicleInfo.speed
+                    else
+                        vehicles[i].display_name = vehicle.custom_name
                     end
                 end
                 cb(vehicles)
@@ -1781,8 +1801,16 @@ ESX.RegisterServerCallback('dw-garages:server:GetImpoundedVehicles', function(so
     -- Make sure we're properly selecting impounded vehicles (state = 2)
     MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE owner = ? AND state = 2', {owner}, function(result)
         if result and #result > 0 then
-            -- Add debug info to help track the issue
+            -- Enrich vehicle data with details from okokvehicleshopv2
             for i, vehicle in ipairs(result) do
+                if not vehicle.custom_name or vehicle.custom_name == "" then
+                    local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+                    vehicle.display_name = vehicleInfo.name
+                    vehicle.category = vehicleInfo.category
+                    vehicle.top_speed = vehicleInfo.speed
+                else
+                    vehicle.display_name = vehicle.custom_name
+                end
             end
             cb(result)
         else
@@ -1796,6 +1824,15 @@ ESX.RegisterServerCallback('dw-garages:server:GetJobGarageVehicles', function(so
     MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE garage = ? AND state = 1', {garageId}, function(result)
         if result and #result > 0 then
             for i, vehicle in ipairs(result) do
+                -- Enrich vehicle data with details from okokvehicleshopv2
+                if not vehicle.custom_name or vehicle.custom_name == "" then
+                    local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+                    vehicle.display_name = vehicleInfo.name
+                    vehicle.category = vehicleInfo.category
+                    vehicle.top_speed = vehicleInfo.speed
+                else
+                    vehicle.display_name = vehicle.custom_name
+                end
             end
             cb(result)
         else
@@ -1803,3 +1840,33 @@ ESX.RegisterServerCallback('dw-garages:server:GetJobGarageVehicles', function(so
         end
     end)
 end)
+
+-- Test command to verify okokvehicleshopv2 integration
+RegisterCommand('testgarageintegration', function(source, args)
+    local src = source
+    local model = args[1] or 'adder'
+    
+    -- Test the vehicle details retrieval
+    local vehicleInfo = GetVehicleDetailsFromShop(model)
+    
+    print('========================================')
+    print('[DW Garages] Integration Test')
+    print('========================================')
+    print('Model: ' .. model)
+    print('Name: ' .. vehicleInfo.name)
+    print('Category: ' .. vehicleInfo.category)
+    print('Speed: ' .. vehicleInfo.speed)
+    print('========================================')
+    
+    if src > 0 then
+        local xPlayer = ESX.GetPlayerFromId(src)
+        if xPlayer then
+            TriggerClientEvent('esx:showNotification', src, 
+                'Vehicle Test: ' .. vehicleInfo.name .. ' | Category: ' .. vehicleInfo.category,
+                'info'
+            )
+        end
+    end
+end, false)
+
+print('[DW Garages] okokvehicleshopv2 integration loaded successfully')
