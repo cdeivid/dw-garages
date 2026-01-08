@@ -921,8 +921,9 @@ function FormatVehiclesForNUI(vehicles)
         -- Use GetVehicleDisplayName instead of QBCore.Shared.Vehicles
         local displayName = GetVehicleDisplayName(vehicle.vehicle)
         
-        local enginePercent = round(vehicle.engine / 10, 1)
-        local bodyPercent = round(vehicle.body / 10, 1)
+        -- Add nil checks for engine, body, and fuel with default values
+        local enginePercent = round((vehicle.engine or 1000) / 10, 1)
+        local bodyPercent = round((vehicle.body or 1000) / 10, 1)
         local fuelPercent = vehicle.fuel or 100
         
         if vehicle.custom_name and vehicle.custom_name ~= "" then
@@ -3419,8 +3420,9 @@ function OpenImpoundUI(vehicles, impoundInfo, impoundId)
         -- Use GetVehicleDisplayName instead of QBCore.Shared.Vehicles
         local displayName = GetVehicleDisplayName(vehicle.vehicle)
         
-        local enginePercent = round(vehicle.engine / 10, 1)
-        local bodyPercent = round(vehicle.body / 10, 1)
+        -- Add nil checks for engine, body, and fuel with default values
+        local enginePercent = round((vehicle.engine or 1000) / 10, 1)
+        local bodyPercent = round((vehicle.body or 1000) / 10, 1)
         local fuelPercent = vehicle.fuel or 100
         
         if vehicle.custom_name and vehicle.custom_name ~= "" then

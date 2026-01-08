@@ -8,6 +8,11 @@ ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS is_favorite INT DEFAULT 0;
 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS stored_in_gang VARCHAR(50) DEFAULT NULL;
 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS shared_garage_id INT DEFAULT NULL;
 
+-- Vehicle health and fuel columns
+ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS engine FLOAT DEFAULT 1000.0;
+ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS body FLOAT DEFAULT 1000.0;
+ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS fuel FLOAT DEFAULT 100.0;
+
 -- Impound system columns
 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS impoundedtime INT NULL;
 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS impoundreason VARCHAR(255) NULL;
