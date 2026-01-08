@@ -201,13 +201,13 @@ RegisterNetEvent('dw-garages:server:TransferVehicleToGarage', function(plate, ne
             TriggerClientEvent('esx:showNotification', src, "You need $" .. transferCost .. " to transfer this vehicle")
             return
         end
-        xPlayer.removeMoney(, transferCost, "vehicle-transfer-fee")
+        xPlayer.removeMoney(transferCost, "vehicle-transfer-fee")
         MySQL.Async.execute('UPDATE owned_vehicles SET garage = ? WHERE plate = ?', {newGarageId, plate}, function(rowsChanged)
             if rowsChanged > 0 then
                 TriggerClientEvent('esx:showNotification', src, "Vehicle transferred to " .. newGarageId .. " garage for $" .. transferCost)
                 TriggerClientEvent('dw-garages:client:TransferComplete', src, newGarageId, plate)
             else
-                xPlayer.addMoney(, transferCost, "vehicle-transfer-refund")
+                xPlayer.addMoney(transferCost, "vehicle-transfer-refund")
                 TriggerClientEvent('esx:showNotification', src, "Transfer failed")
             end
         end)
@@ -1564,9 +1564,9 @@ RegisterNetEvent('dw-garages:server:PayImpoundFee', function(plate, fee)
         
         
         if xPlayer.getMoney() >= actualFee then
-            xPlayer.removeMoney(, actualFee, "impound-fee")
+            xPlayer.removeMoney(actualFee, "impound-fee")
         else
-            xPlayer.removeAccountMoney('bank',, actualFee, "impound-fee")
+            xPlayer.removeAccountMoney('bank', actualFee, "impound-fee")
         end
         MySQL.Async.execute('UPDATE owned_vehicles SET state = 0, garage = NULL, impoundedtime = NULL, impoundreason = NULL, impoundedby = NULL, impoundtype = NULL, impoundfee = NULL, impoundtime = NULL WHERE plate = ?', {plate}, function(rowsChanged)
             if rowsChanged > 0 then
