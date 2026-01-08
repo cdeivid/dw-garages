@@ -9,6 +9,9 @@ ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS stored_in_gang VARCHAR(50) D
 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS shared_garage_id INT DEFAULT NULL;
 
 -- Vehicle health and fuel columns
+-- engine: Vehicle engine health (0-1000 scale, 1000 = perfect condition)
+-- body: Vehicle body health (0-1000 scale, 1000 = perfect condition)
+-- fuel: Vehicle fuel level (0-100 percentage scale)
 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS engine FLOAT DEFAULT 1000.0;
 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS body FLOAT DEFAULT 1000.0;
 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS fuel FLOAT DEFAULT 100.0;
