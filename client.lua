@@ -87,6 +87,36 @@ function GetVehicleDisplayName(model)
     end
 end
 
+function GetVehicleFuel(vehicle)
+    -- Get fuel level with proper fallback to different fuel systems
+    local fuelLevel = 0
+    
+    if GetResourceState('LegacyFuel') == 'started' then
+        fuelLevel = exports['LegacyFuel']:GetFuel(vehicle)
+    elseif GetResourceState('ps-fuel') == 'started' then
+        fuelLevel = exports['ps-fuel']:GetFuel(vehicle)
+    elseif GetResourceState('qb-fuel') == 'started' then
+        fuelLevel = exports['qb-fuel']:GetFuel(vehicle)
+    else
+        fuelLevel = GetVehicleFuelLevel(vehicle)
+    end
+    
+    return fuelLevel
+end
+
+function SetVehicleFuel(vehicle, fuelLevel)
+    -- Set fuel level with proper fallback to different fuel systems
+    if GetResourceState('LegacyFuel') == 'started' then
+        exports['LegacyFuel']:SetFuel(vehicle, fuelLevel)
+    elseif GetResourceState('ps-fuel') == 'started' then
+        exports['ps-fuel']:SetFuel(vehicle, fuelLevel)
+    elseif GetResourceState('qb-fuel') == 'started' then
+        exports['qb-fuel']:SetFuel(vehicle, fuelLevel)
+    else
+        SetVehicleFuelLevel(vehicle, fuelLevel)
+    end
+end
+
 function ShowInputDialog(title, inputs)
     -- Using ox_lib for input dialogs
     return exports['ox_lib']:inputDialog(title, inputs)
@@ -285,7 +315,7 @@ function ParkJobVehicle(vehicle, jobName)
     local props = GetVehiclePropertiesESX(vehicle)
     local engineHealth = GetVehicleEngineHealth(vehicle)
     local bodyHealth = GetVehicleBodyHealth(vehicle)
-    local fuelLevel = exports['LegacyFuel']:GetFuel(vehicle)
+    local fuelLevel = GetVehicleFuel(vehicle)
     
     SetEntityAsMissionEntity(vehicle, true, true)
     
@@ -326,7 +356,7 @@ function ParkJobVehicle(vehicle, jobName)
         SetVehicleEngineOn(vehicle, false, true, true)
         SetVehicleEngineHealth(vehicle, engineHealth)
         SetVehicleBodyHealth(vehicle, bodyHealth)
-        exports['LegacyFuel']:SetFuel(vehicle, fuelLevel)
+        SetVehicleFuel(vehicle, fuelLevel)
         
         TriggerServerEvent('dw-garages:server:TrackJobVehicle', plate, jobName, props)
         
@@ -848,7 +878,7 @@ RegisterNUICallback('takeOutJobVehicle', function(data, cb)
         end
         
         SetEntityHeading(veh, clearPoint.w)
-        exports['LegacyFuel']:SetFuel(veh, 100)
+        SetVehicleFuel(veh, 100)
         
         FadeInVehicle(veh)
         
@@ -1998,7 +2028,7 @@ RegisterNUICallback('takeOutVehicle', function(data, cb)
             end
             
             SetEntityHeading(veh, clearPoint.w)
-            exports['LegacyFuel']:SetFuel(veh, data.fuel)
+            SetVehicleFuel(veh, data.fuel)
             SetVehicleNumberPlateText(veh, plate)
             
             FadeInVehicle(veh)
@@ -2091,7 +2121,7 @@ RegisterNetEvent('dw-garages:client:TakeOutSharedVehicle', function(plate, vehic
         end
         
         SetEntityHeading(veh, clearPoint.w)
-        exports['LegacyFuel']:SetFuel(veh, vehicleData.fuel)
+        SetVehicleFuel(veh, vehicleData.fuel)
         SetVehicleNumberPlateText(veh, plate)
         
         FadeInVehicle(veh)
@@ -2739,7 +2769,7 @@ RegisterNetEvent('dw-garages:client:StoreVehicle', function(data)
     
     local plate = GetVehiclePlate(curVeh)
     local props = GetVehiclePropertiesESX(curVeh)
-    local fuel = exports['LegacyFuel']:GetFuel(curVeh)
+    local fuel = GetVehicleFuel(curVeh)
     local engineHealth = GetVehicleEngineHealth(curVeh)
     local bodyHealth = GetVehicleBodyHealth(curVeh)
     
@@ -3091,17 +3121,7 @@ function GetVehicleHoverInfo(vehicle)
     local inVehicle = (GetVehiclePedIsIn(ped, false) == vehicle)
     local engineHealth = GetVehicleEngineHealth(vehicle)
     local bodyHealth = GetVehicleBodyHealth(vehicle)
-    local fuelLevel = 0
-    
-    if GetResourceState('LegacyFuel') ~= 'missing' then
-        fuelLevel = exports['LegacyFuel']:GetFuel(vehicle)
-    elseif GetResourceState('ps-fuel') ~= 'missing' then
-        fuelLevel = exports['ps-fuel']:GetFuel(vehicle)
-    elseif GetResourceState('qb-fuel') ~= 'missing' then
-        fuelLevel = exports['qb-fuel']:GetFuel(vehicle)
-    else
-        fuelLevel = GetVehicleFuelLevel(vehicle)
-    end
+    local fuelLevel = GetVehicleFuel(vehicle)
     
     local vehicleInfo = nil
     ESX.TriggerServerCallback('dw-garages:server:GetVehicleInfo', function(info)
@@ -3264,17 +3284,7 @@ end
 function StoreVehicleInGarage(vehicle, garageId, garageType)
     local plate = GetVehiclePlate(vehicle)
     local props = GetVehiclePropertiesESX(vehicle)
-    local fuel = 0
-    
-    if GetResourceState('LegacyFuel') ~= 'missing' then
-        fuel = exports['LegacyFuel']:GetFuel(vehicle)
-    elseif GetResourceState('ps-fuel') ~= 'missing' then
-        fuel = exports['ps-fuel']:GetFuel(vehicle)
-    elseif GetResourceState('qb-fuel') ~= 'missing' then
-        fuel = exports['qb-fuel']:GetFuel(vehicle)
-    else
-        fuel = GetVehicleFuelLevel(vehicle)
-    end
+    local fuel = GetVehicleFuel(vehicle)
     
     local engineHealth = GetVehicleEngineHealth(vehicle)
     local bodyHealth = GetVehicleBodyHealth(vehicle)
@@ -3496,7 +3506,7 @@ RegisterNUICallback('releaseImpoundedVehicle', function(data, cb)
                         SetEntityHeading(veh, spawnPoint.w)
                         SetEntityCoords(veh, spawnPoint.x, spawnPoint.y, spawnPoint.z)
                         
-                        exports['LegacyFuel']:SetFuel(veh, vehData.fuel or 100)
+                        SetVehicleFuel(veh, vehData.fuel or 100)
                         SetVehicleNumberPlateText(veh, plate)
                         
                         FadeInVehicle(veh)
