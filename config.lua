@@ -14,6 +14,7 @@ Config.MaxFeeMultiplier = 5  -- Maximum multiplier for fees
 Config.ShowJobVehiclesTab = true -- Show Job Vehicles tab in garage
 Config.LostVehicleTimeout = 7200 -- Time in seconds before an out vehicle is considered lost (2 hours)
 Config.LostVehicleTimeout = 3600 -- 1 hour
+Config.EnableDebugCommands = false -- Set to true to enable test commands (not for production)
 Config.ImpoundJobs = {
     ['police'] = true,
     ['sheriff'] = true,

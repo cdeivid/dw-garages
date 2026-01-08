@@ -7,7 +7,89 @@ local occupiedJobParkingSpots = {}
 local trackedJobVehicles = {}
 local jobVehicles = {}
 
+-- okokvehicleshopv2 Integration Functions
+-- Get vehicle details from okokvehicleshopv2 export
+function GetVehicleDetailsFromShop(model)
+    if GetResourceState('okokvehicleshopv2') == 'started' then
+        -- Call okokvehicleshopv2 export to get vehicle details
+        local success, vehicleData = pcall(function()
+            return exports['okokvehicleshopv2']:getVehicleName(model)
+        end)
+        
+        if success and vehicleData then
+            return vehicleData
+        end
+    end
+    
+    -- Fallback to basic vehicle name if export not available
+    return {
+        name = GetDisplayNameFromVehicleModel(GetHashKey(model)) or model,
+        category = "Unknown",
+        speed = 0,
+        model = model
+    }
+end
 
+-- Enriches a single vehicle record with data from okokvehicleshopv2
+-- Modifies the vehicle table in-place
+function EnrichVehicleData(vehicle)
+    if not vehicle then return end
+    
+    -- Skip if custom name is already set and use it instead
+    if vehicle.custom_name and vehicle.custom_name ~= "" then
+        vehicle.display_name = vehicle.custom_name
+        return
+    end
+    
+    -- Get vehicle details from shop
+    local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+    vehicle.display_name = vehicleInfo.name
+    vehicle.category = vehicleInfo.category
+    vehicle.top_speed = vehicleInfo.speed
+end
+
+-- Event handler for vehicle purchases from okokvehicleshopv2
+RegisterNetEvent('okokvehicleshop:vehiclePurchased', function(vehicleData)
+    local src = source
+    local xPlayer = ESX.GetPlayerFromId(src)
+    if not xPlayer then return end
+    
+    local plate = vehicleData.plate
+    local model = vehicleData.model
+    local garage = vehicleData.garage or 'legion' -- Default garage
+    
+    -- Get vehicle details from shop
+    local vehicleInfo = GetVehicleDetailsFromShop(model)
+    
+    -- Verify vehicle in database and ensure it's correctly configured
+    MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE plate = ?', {plate}, function(result)
+        if result and #result > 0 then
+            -- Vehicle exists, ensure it's stored in correct garage
+            local vehicle = result[1]
+            if vehicle.state ~= 1 or vehicle.garage ~= garage then
+                MySQL.Async.execute('UPDATE owned_vehicles SET state = 1, garage = ? WHERE plate = ?', 
+                    {garage, plate}, function(rowsChanged)
+                        if rowsChanged > 0 then
+                            print('[DW Garages] Vehicle purchase synchronized and corrected: ' .. plate .. ' (' .. vehicleInfo.name .. ') -> ' .. garage)
+                        end
+                    end
+                )
+            else
+                print('[DW Garages] Vehicle purchase synchronized: ' .. plate .. ' (' .. vehicleInfo.name .. ')')
+            end
+        else
+            -- Vehicle doesn't exist in database, log warning
+            -- Note: okokvehicleshopv2 should handle insertion
+            print('[DW Garages] WARNING: Vehicle purchase detected but not found in database: ' .. plate)
+            print('[DW Garages] This may indicate okokvehicleshopv2 did not properly insert the vehicle.')
+        end
+    end)
+end)
+
+-- Export function to get enriched vehicle data
+exports('getEnrichedVehicleData', function(model)
+    return GetVehicleDetailsFromShop(model)
+end)
 
 ESX.RegisterServerCallback('dw-garages:server:GetPersonalVehicles', function(source, cb, garageId)
     local xPlayer = ESX.GetPlayerFromId(source)
@@ -26,6 +108,7 @@ ESX.RegisterServerCallback('dw-garages:server:GetPersonalVehicles', function(sou
     MySQL.Async.fetchAll(query, params, function(result)
         if result[1] then
             for i, vehicle in ipairs(result) do
+                EnrichVehicleData(vehicle)
             end
             cb(result)
         else
@@ -41,6 +124,7 @@ ESX.RegisterServerCallback('dw-garages:server:GetVehiclesByGarage', function(sou
     MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE garage = ?', {garageId}, function(result)
         if result and #result > 0 then
             for i, vehicle in ipairs(result) do
+                EnrichVehicleData(vehicle)
             end
             cb(result)
         else
@@ -61,10 +145,12 @@ ESX.RegisterServerCallback('dw-garages:server:GetGangVehicles', function(source,
             local allVehicles = {}
             
             for _, vehicle in ipairs(personalResult) do
+                EnrichVehicleData(vehicle)
                 table.insert(allVehicles, vehicle)
             end
             
             for _, vehicle in ipairs(gangResult) do
+                EnrichVehicleData(vehicle)
                 table.insert(allVehicles, vehicle)
             end
             
@@ -747,6 +833,9 @@ ESX.RegisterServerCallback('dw-garages:server:GetSharedGarageVehicles', function
                     else
                         vehicles[i].owner_name = "Unknown"
                     end
+                    
+                    -- Enrich vehicle data with details from okokvehicleshopv2
+                    EnrichVehicleData(vehicles[i])
                 end
                 cb(vehicles)
             else
@@ -766,6 +855,9 @@ function getSharedGarageVehicles(garageId, owner, cb)
                     else
                         vehicles[i].owner_name = "Unknown"
                     end
+                    
+                    -- Enrich vehicle data with details from okokvehicleshopv2
+                    EnrichVehicleData(vehicles[i])
                 end
                 cb(vehicles)
             else
@@ -1697,8 +1789,9 @@ ESX.RegisterServerCallback('dw-garages:server:GetImpoundedVehicles', function(so
     -- Make sure we're properly selecting impounded vehicles (state = 2)
     MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE owner = ? AND state = 2', {owner}, function(result)
         if result and #result > 0 then
-            -- Add debug info to help track the issue
+            -- Enrich vehicle data with details from okokvehicleshopv2
             for i, vehicle in ipairs(result) do
+                EnrichVehicleData(vehicle)
             end
             cb(result)
         else
@@ -1712,6 +1805,7 @@ ESX.RegisterServerCallback('dw-garages:server:GetJobGarageVehicles', function(so
     MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE garage = ? AND state = 1', {garageId}, function(result)
         if result and #result > 0 then
             for i, vehicle in ipairs(result) do
+                EnrichVehicleData(vehicle)
             end
             cb(result)
         else
@@ -1719,3 +1813,37 @@ ESX.RegisterServerCallback('dw-garages:server:GetJobGarageVehicles', function(so
         end
     end)
 end)
+
+-- Test command to verify okokvehicleshopv2 integration (only if debug enabled)
+if Config.EnableDebugCommands then
+    RegisterCommand('testgarageintegration', function(source, args)
+        local src = source
+        local model = args[1] or 'adder'
+        
+        -- Test the vehicle details retrieval
+        local vehicleInfo = GetVehicleDetailsFromShop(model)
+        
+        print('========================================')
+        print('[DW Garages] Integration Test')
+        print('========================================')
+        print('Model: ' .. model)
+        print('Name: ' .. vehicleInfo.name)
+        print('Category: ' .. vehicleInfo.category)
+        print('Speed: ' .. vehicleInfo.speed)
+        print('========================================')
+        
+        if src > 0 then
+            local xPlayer = ESX.GetPlayerFromId(src)
+            if xPlayer then
+                TriggerClientEvent('esx:showNotification', src, 
+                    'Vehicle Test: ' .. vehicleInfo.name .. ' | Category: ' .. vehicleInfo.category,
+                    'info'
+                )
+            end
+        end
+    end, false)
+    
+    print('[DW Garages] Debug commands enabled')
+end
+
+print('[DW Garages] okokvehicleshopv2 integration loaded successfully')
