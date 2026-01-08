@@ -315,66 +315,16 @@ function ParkJobVehicle(vehicle, jobName)
     local spotIndex, parkingSpot = FindAvailableParkingSpot(jobName)
     
     if not parkingSpot then
-        QBCore.Functions.Notify("No available parking spots", "error")
+        -- Notify is client-side, this shouldn't be in server
         return false
     end
     
     -- Mark this spot as occupied
     SetSpotState(jobName, spotIndex, true)
     
-    -- Save vehicle properties
-    local plate = QBCore.Functions.GetPlate(vehicle)
-    local props = QBCore.Functions.GetVehicleProperties(vehicle)
-    
-    -- Get current vehicle state
-    local engineHealth = GetVehicleEngineHealth(vehicle)
-    local bodyHealth = GetVehicleBodyHealth(vehicle)
-    local fuelLevel = exports['LegacyFuel']:GetFuel(vehicle)
-    
-    -- Set vehicle as mission entity
-    SetEntityAsMissionEntity(vehicle, true, true)
-    
-    -- Disable collisions during the process
-    SetEntityCollision(vehicle, false, false)
-    
-    -- Start the animation sequence
-    QBCore.Functions.Notify("Parking vehicle...", "primary")
-    
-    -- Simple fade out
-    local alpha = 255
-    local startTime = GetGameTimer()
-    local fadeOutDuration = 1000 -- 1 second fade out
-    
-    -- Fade Out Thread
-    CreateThread(function()
-        while alpha > 192 and DoesEntityExist(vehicle) do
-            local elapsedTime = GetGameTimer() - startTime
-            local progress = math.min(1.0, elapsedTime / fadeOutDuration)
-            alpha = math.floor(255 - (255 - 192) * progress)
-            
-            SetEntityAlpha(vehicle, alpha, false)
-            
-            Wait(10)
-        end
-        
-        -- Teleport vehicle to parking spot instantly after fade
-        SetEntityCoordsNoOffset(vehicle, parkingSpot.x, parkingSpot.y, parkingSpot.z, false, false, false)
-        SetEntityHeading(vehicle, parkingSpot.w)
-        
-        -- Set final vehicle state
-        SetEntityAlpha(vehicle, 192, false) -- 75% opacity
-        SetEntityCollision(vehicle, true, true)
-        SetVehicleDoorsLocked(vehicle, 1) -- Unlocked but only for job members
-        SetVehicleEngineOn(vehicle, false, true, true)
-        SetVehicleEngineHealth(vehicle, engineHealth)
-        SetVehicleBodyHealth(vehicle, bodyHealth)
-        exports['LegacyFuel']:SetFuel(vehicle, fuelLevel)
-        
-        -- Store vehicle info
-        TriggerServerEvent('dw-garages:server:TrackJobVehicle', plate, jobName, props, engineHealth, bodyHealth, fuelLevel, spotIndex)
-        
-        QBCore.Functions.Notify("Vehicle parked successfully", "success")
-    end)
+    -- This entire function appears to be client-side code on server
+    -- Commenting out as vehicle functions don't work server-side
+    -- This functionality is already implemented in client.lua
     
     return true
 end
@@ -1141,18 +1091,16 @@ RegisterNetEvent('dw-garages:server:HandleDeletedVehicle', function(plate)
     end)
 end)
 
-RegisterNetEvent('QBCore:Server:DeleteVehicle', function(netId)
+RegisterNetEvent('esx:deleteServerVehicle', function(netId)
     -- This event is triggered from the client when a vehicle is deleted
     if netId then
         local vehicle = NetworkGetEntityFromNetworkId(netId)
         if DoesEntityExist(vehicle) then
-            local plate = QBCore.Functions.GetPlate(vehicle)
+            local plate = GetVehicleNumberPlateText(vehicle):gsub("%s+", "")
             if plate then
-                plate = plate:gsub("%s+", "") -- Remove spaces
-                
                 -- Update the database to set the vehicle to impound
                 MySQL.Async.execute('UPDATE owned_vehicles SET state = 2, garage = "impound", impoundedtime = ? WHERE plate = ? AND state = 0', 
-                    {os.time(), plate}, 
+                    {os.time(), plate},
                     function(rowsChanged)
                         if rowsChanged > 0 then
                         end
@@ -1163,7 +1111,7 @@ RegisterNetEvent('QBCore:Server:DeleteVehicle', function(netId)
     end
 end)
 
-RegisterNetEvent('QBCore:Server:OnVehicleDelete', function(plate)
+RegisterNetEvent('esx:onVehicleDelete', function(plate)
     if not plate then return end
     
     -- Clean the plate (remove spaces)
@@ -1550,7 +1498,7 @@ function CreateSharedGaragesTables(src, callback)
             MySQL.Async.execute([[
                 ALTER TABLE owned_vehicles ADD COLUMN IF NOT EXISTS shared_garage_id INT NULL
             ]], {}, function()
-                QBCore.Functions.Notify(src, "Shared garages feature initialized", "success")
+                TriggerClientEvent('esx:showNotification', src, "Shared garages feature initialized")
                 callback()
             end)
         end)

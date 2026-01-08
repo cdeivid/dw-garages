@@ -997,15 +997,7 @@ Citizen.CreateThread(function()
         Wait(0)
     end
     
-    local originalDeleteVehicle = QBCore.Functions.DeleteVehicle
-    
-    QBCore.Functions.DeleteVehicle = function(vehicle)
-        if DoesEntityExist(vehicle) then
-            local netId = NetworkGetNetworkIdFromEntity(vehicle)
-            TriggerServerEvent('QBCore:Server:DeleteVehicle', netId)
-            return originalDeleteVehicle(vehicle)
-        end
-    end
+    -- No need to override ESX delete function
 end)
 
 Citizen.CreateThread(function()
@@ -1032,7 +1024,7 @@ Citizen.CreateThread(function()
     end
 end)
 
-RegisterNetEvent('QBCore:Command:DeleteVehicle', function()
+RegisterNetEvent('esx:deleteVehicle', function()
     local ped = PlayerPedId()
     local veh = GetVehiclePedIsIn(ped, false)
     
