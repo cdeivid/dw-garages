@@ -1,4 +1,4 @@
-local QBCore = exports['qb-core']:GetCoreObject()
+local ESX = exports['es_extended']:getSharedObject()
 local PlayerData = {}
 local currentGarage = nil
 local inGarageStation = false
@@ -38,13 +38,94 @@ local occupiedParkingSpots = {}
 local jobParkingSpots = {}
 local occupiedParkingSpots = {}
 
+-- Helper functions for ESX compatibility
+function ESXNotify(message, type)
+    if type == 'success' then
+        ESX.ShowNotification(message, 'success')
+    elseif type == 'error' then
+        ESX.ShowNotification(message, 'error')
+    elseif type == 'primary' or type == 'info' then
+        ESX.ShowNotification(message, 'info')
+    else
+        ESX.ShowNotification(message)
+    end
+end
 
-RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
-    PlayerData = QBCore.Functions.GetPlayerData()
+function GetVehiclePlate(vehicle)
+    return GetVehicleNumberPlateText(vehicle):gsub("%s+", "")
+end
+
+function GetVehiclePropertiesESX(vehicle)
+    if not DoesEntityExist(vehicle) then return nil end
+    return ESX.Game.GetVehicleProperties(vehicle)
+end
+
+function SetVehiclePropertiesESX(vehicle, props)
+    if not DoesEntityExist(vehicle) or not props then return end
+    ESX.Game.SetVehicleProperties(vehicle, props)
+end
+
+function SpawnVehicleESX(model, cb, coords, heading)
+    ESX.Game.SpawnVehicle(model, coords, heading, cb)
+end
+
+function DeleteVehicleESX(vehicle)
+    if DoesEntityExist(vehicle) then
+        ESX.Game.DeleteVehicle(vehicle)
+    end
+end
+
+function GetVehicleDisplayName(model)
+    -- Get vehicle display name from model
+    local displayName = GetDisplayNameFromVehicleModel(model)
+    local labelName = GetLabelText(displayName)
+    
+    if labelName ~= 'NULL' then
+        return labelName
+    else
+        return displayName
+    end
+end
+
+function ShowInputDialog(title, inputs)
+    -- Using ox_lib for input dialogs
+    return exports['ox_lib']:inputDialog(title, inputs)
+end
+
+function ShowProgressBar(label, duration, options, finish, cancel)
+    -- Using ox_lib for progress bars (compatible with most ESX setups)
+    if exports['ox_lib'] then
+        exports['ox_lib']:progressBar({
+            duration = duration,
+            label = label,
+            useWhileDead = false,
+            canCancel = true,
+            disable = {
+                move = options.disableMovement or false,
+                car = options.disableCarMovement or false,
+                combat = options.disableCombat or false,
+                mouse = options.disableMouse or false
+            },
+            anim = options.animDict and options.animName and {
+                dict = options.animDict,
+                clip = options.animName
+            } or nil
+        })
+        if finish then finish() end
+    else
+        -- Fallback to simple wait
+        Wait(duration)
+        if finish then finish() end
+    end
+end
+
+
+RegisterNetEvent('esx:playerLoaded', function(xPlayer)
+    PlayerData = xPlayer
 end)
 
-RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
-    PlayerData = QBCore.Functions.GetPlayerData()
+RegisterNetEvent('esx:playerLoaded', function(xPlayer)
+    PlayerData = xPlayer
     isPlayerLoaded = true
 end)
 
@@ -53,22 +134,18 @@ AddEventHandler('onResourceStart', function(resourceName)
     
     Wait(1000)
     
-    if LocalPlayer.state.isLoggedIn then
-        PlayerData = QBCore.Functions.GetPlayerData()
+    if ESX.IsPlayerLoaded() then
+        PlayerData = ESX.GetPlayerData()
         isPlayerLoaded = true
     end
 end)
 
-RegisterNetEvent('QBCore:Player:SetPlayerData', function(data)
-    PlayerData = data
+RegisterNetEvent('esx:setJob', function(job)
+    PlayerData.job = job
 end)
 
-RegisterNetEvent('QBCore:Client:OnJobUpdate', function(JobInfo)
-    PlayerData.job = JobInfo
-end)
-
-RegisterNetEvent('QBCore:Client:OnGangUpdate', function(GangInfo)
-    PlayerData.gang = GangInfo
+RegisterNetEvent('esx:setJob2', function(job2)
+    PlayerData.job2 = job2
 end)
 
 CreateThread(function()
@@ -173,7 +250,7 @@ function ParkJobVehicle(vehicle, jobName)
     
     local parkingSpots = Config.JobParkingSpots[jobName]
     if not parkingSpots or #parkingSpots == 0 then
-        QBCore.Functions.Notify("No parking spots found", "error")
+        ESXNotify("No parking spots found", "error")
         return false
     end
     
@@ -200,19 +277,19 @@ function ParkJobVehicle(vehicle, jobName)
     end
     
     if not foundSpot then
-        QBCore.Functions.Notify("All parking spots are occupied", "error")
+        ESXNotify("All parking spots are occupied", "error")
         return false
     end
     
-    local plate = QBCore.Functions.GetPlate(vehicle)
-    local props = QBCore.Functions.GetVehicleProperties(vehicle)
+    local plate = GetVehiclePlate(vehicle)
+    local props = GetVehiclePropertiesESX(vehicle)
     local engineHealth = GetVehicleEngineHealth(vehicle)
     local bodyHealth = GetVehicleBodyHealth(vehicle)
     local fuelLevel = exports['LegacyFuel']:GetFuel(vehicle)
     
     SetEntityAsMissionEntity(vehicle, true, true)
     
-    QBCore.Functions.Notify("Parking vehicle...", "primary")
+    ESXNotify("Parking vehicle...", "primary")
     
     local initialVehicleCoords = GetEntityCoords(vehicle)
     local initialHeading = GetEntityHeading(vehicle)
@@ -253,7 +330,7 @@ function ParkJobVehicle(vehicle, jobName)
         
         TriggerServerEvent('dw-garages:server:TrackJobVehicle', plate, jobName, props)
         
-        QBCore.Functions.Notify("Vehicle parked successfully", "success")
+        ESXNotify("Vehicle parked successfully", "success")
     end)
     
     return true
@@ -344,37 +421,8 @@ RegisterNUICallback('confirmRemoveVehicle', function(data, cb)
     
     Wait(100)
     
-    local removeMenu = {
-        {
-            header = "Remove Vehicle",
-            isMenuHeader = true
-        },
-        {
-            header = "Are you sure?",
-            txt = "Remove this vehicle from the shared garage?",
-            isMenuHeader = true
-        },
-        {
-            header = "Yes, remove vehicle",
-            txt = "The vehicle will be returned to your main garage",
-            params = {
-                isServer = true,
-                event = "dw-garages:server:RemoveVehicleFromSharedGarage",
-                args = {
-                    plate = plate
-                }
-            }
-        },
-        {
-            header = "No, cancel",
-            txt = "Keep vehicle in shared garage",
-            params = {
-                event = ""
-            }
-        },
-    }
-    
-    exports['qb-menu']:openMenu(removeMenu)
+    -- Direct confirmation via server event
+    TriggerServerEvent("dw-garages:server:RemoveVehicleFromSharedGarage", plate)
     
     cb({status = "success"})
 end)
@@ -420,29 +468,8 @@ callbackRegistry = {}
 RegisterNUICallback('confirmDeleteGarage', function(data, cb)
     local garageId = data.garageId
     
-    exports['qb-menu']:openMenu({
-        {
-            header = "Confirm Deletion",
-            isMenuHeader = true
-        },
-        {
-            header = "Delete Garage",
-            txt = "All vehicles will be returned to owners",
-            params = {
-                event = "dw-garages:client:ConfirmDeleteSharedGarage",
-                args = {
-                    garageId = garageId
-                }
-            }
-        },
-        {
-            header = "Cancel",
-            txt = "Keep this garage",
-            params = {
-                event = "dw-garages:client:CancelDeleteGarage"
-            }
-        }
-    })
+    -- Direct confirmation
+    TriggerEvent("dw-garages:client:ConfirmDeleteSharedGarage", {garageId = garageId})
     
     cb({status = "success"})
 end)
@@ -642,7 +669,7 @@ end
 function IsJobVehicle(vehicle)
     if not DoesEntityExist(vehicle) then return false end
     
-    local plate = QBCore.Functions.GetPlate(vehicle)
+    local plate = GetVehiclePlate(vehicle)
     if not plate then return false end
     
     if string.sub(plate, 1, 3) == "JOB" then
@@ -813,9 +840,9 @@ RegisterNUICallback('takeOutJobVehicle', function(data, cb)
     end
     
     local spawnCoords = vector3(clearPoint.x, clearPoint.y, clearPoint.z)
-    QBCore.Functions.SpawnVehicle(model, function(veh)
+    SpawnVehicleESX(model, function(veh)
         if not veh or veh == 0 then
-            QBCore.Functions.Notify("Error creating job vehicle. Please try again.", "error")
+            ESXNotify("Error creating job vehicle. Please try again.", "error")
             cb({status = "error", message = "Failed to spawn vehicle"})
             return
         end
@@ -833,7 +860,7 @@ RegisterNUICallback('takeOutJobVehicle', function(data, cb)
         
         FixEngineSmoke(veh)
         
-        QBCore.Functions.Notify("Job vehicle taken out", "success")
+        ESXNotify("Job vehicle taken out", "success")
         cb({status = "success"})
     end, spawnCoords, true)
     
@@ -846,7 +873,7 @@ RegisterNUICallback('refreshVehicles', function(data, cb)
     local garageType = data.garageType
     
     if garageType == "public" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
             if vehicles then
                 SendNUIMessage({
                     action = "refreshVehicles",
@@ -856,7 +883,7 @@ RegisterNUICallback('refreshVehicles', function(data, cb)
         end, garageId)
     elseif garageType == "gang" then
         local gang = PlayerData.gang.name
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetGangVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetGangVehicles', function(vehicles)
             if vehicles then
                 SendNUIMessage({
                     action = "refreshVehicles",
@@ -865,7 +892,7 @@ RegisterNUICallback('refreshVehicles', function(data, cb)
             end
         end, gang, garageId)
     elseif garageType == "shared" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetSharedGarageVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetSharedGarageVehicles', function(vehicles)
             if vehicles then
                 SendNUIMessage({
                     action = "refreshVehicles",
@@ -874,7 +901,7 @@ RegisterNUICallback('refreshVehicles', function(data, cb)
             end
         end, garageId)
     elseif garageType == "impound" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetImpoundedVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetImpoundedVehicles', function(vehicles)
             if vehicles then
                 SendNUIMessage({
                     action = "refreshVehicles",
@@ -891,50 +918,50 @@ function FormatVehiclesForNUI(vehicles)
     local formattedVehicles = {}
     local currentGarageId = currentGarage and currentGarage.id or nil    
     for i, vehicle in ipairs(vehicles) do
-        local vehicleInfo = QBCore.Shared.Vehicles[vehicle.vehicle]
-        if vehicleInfo then
-            local enginePercent = round(vehicle.engine / 10, 1)
-            local bodyPercent = round(vehicle.body / 10, 1)
-            local fuelPercent = vehicle.fuel or 100
-            
-            local displayName = vehicleInfo.name
-            if vehicle.custom_name and vehicle.custom_name ~= "" then
-                displayName = vehicle.custom_name
+        -- Use GetVehicleDisplayName instead of QBCore.Shared.Vehicles
+        local displayName = GetVehicleDisplayName(vehicle.vehicle)
+        
+        local enginePercent = round(vehicle.engine / 10, 1)
+        local bodyPercent = round(vehicle.body / 10, 1)
+        local fuelPercent = vehicle.fuel or 100
+        
+        if vehicle.custom_name and vehicle.custom_name ~= "" then
+            displayName = vehicle.custom_name
+        end
+        
+        local isInCurrentGarage = false
+        if currentGarage and currentGarage.type == "job" then
+            isInCurrentGarage = true
+        else
+            if vehicle.garage and currentGarageId then
+                isInCurrentGarage = (vehicle.garage == currentGarageId)
             end
+        end
+        
+        local impoundFee = nil
+        local impoundReason = nil
+        local impoundedBy = nil
+        local daysImpounded = nil
+        
+        if vehicle.state == 2 then
+            impoundFee = Config.ImpoundFee  
             
-            local isInCurrentGarage = false
-            if currentGarage and currentGarage.type == "job" then
-                isInCurrentGarage = true
-            else
-                if vehicle.garage and currentGarageId then
-                    isInCurrentGarage = (vehicle.garage == currentGarageId)
+            if vehicle.impoundfee ~= nil then
+                local customFee = tonumber(vehicle.impoundfee)
+                if customFee and customFee > 0 then
+                    impoundFee = customFee
                 end
             end
             
-            local impoundFee = nil
-            local impoundReason = nil
-            local impoundedBy = nil
-            local daysImpounded = nil
-            
-            if vehicle.state == 2 then
-                impoundFee = Config.ImpoundFee  
-                
-                if vehicle.impoundfee ~= nil then
-                    local customFee = tonumber(vehicle.impoundfee)
-                    if customFee and customFee > 0 then
-                        impoundFee = customFee
-                    end
-                end
-                
-                impoundReason = vehicle.impoundreason or "No reason specified"
-                impoundedBy = vehicle.impoundedby or "Unknown Officer"
-                daysImpounded = 1
-            end
-            
-            local isStored = vehicle.state == 1
-            local isOut = vehicle.state == 0
-            
-            table.insert(formattedVehicles, {
+            impoundReason = vehicle.impoundreason or "No reason specified"
+            impoundedBy = vehicle.impoundedby or "Unknown Officer"
+            daysImpounded = 1
+        end
+        
+        local isStored = vehicle.state == 1
+        local isOut = vehicle.state == 0
+        
+        table.insert(formattedVehicles, {
                 id = i,
                 plate = vehicle.plate,
                 model = vehicle.vehicle,
@@ -960,14 +987,13 @@ function FormatVehiclesForNUI(vehicles)
                 daysImpounded = daysImpounded,
                 impoundType = vehicle.impoundtype
             })
-        end
     end
     
     return formattedVehicles
 end
 
 Citizen.CreateThread(function()
-    while QBCore == nil do
+    while ESX == nil do
         Wait(0)
     end
     
@@ -990,7 +1016,7 @@ Citizen.CreateThread(function()
         local currentVehicles = {}
         for _, vehicle in pairs(vehicles) do
             if DoesEntityExist(vehicle) then
-                local plate = QBCore.Functions.GetPlate(vehicle)
+                local plate = GetVehiclePlate(vehicle)
                 if plate then
                     currentVehicles[plate] = true
                 end
@@ -1011,7 +1037,7 @@ RegisterNetEvent('QBCore:Command:DeleteVehicle', function()
     local veh = GetVehiclePedIsIn(ped, false)
     
     if veh ~= 0 then
-        local plate = QBCore.Functions.GetPlate(veh)
+        local plate = GetVehiclePlate(veh)
         if plate then
             TriggerServerEvent('dw-garages:server:HandleDeletedVehicle', plate)
         end
@@ -1020,7 +1046,7 @@ RegisterNetEvent('QBCore:Command:DeleteVehicle', function()
         local vehicles = GetGamePool('CVehicle')
         for _, v in pairs(vehicles) do
             if #(coords - GetEntityCoords(v)) <= 5.0 then
-                local plate = QBCore.Functions.GetPlate(v)
+                local plate = GetVehiclePlate(v)
                 if plate then
                     TriggerServerEvent('dw-garages:server:HandleDeletedVehicle', plate)
                 end
@@ -1036,7 +1062,7 @@ RegisterNUICallback('checkVehicleState', function(data, cb)
         cb({state = 1}) 
         return
     end
-    QBCore.Functions.TriggerCallback('dw-garages:server:CheckVehicleStatus', function(isStored)
+    ESX.TriggerServerCallback('dw-garages:server:CheckVehicleStatus', function(isStored)
         if isStored then
             cb({state = 1}) 
         else
@@ -1047,7 +1073,7 @@ end)
 
 RegisterNUICallback('refreshImpoundVehicles', function(data, cb)
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetImpoundedVehicles', function(vehicles)
+    ESX.TriggerServerCallback('dw-garages:server:GetImpoundedVehicles', function(vehicles)
         if vehicles then            
             for i, vehicle in ipairs(vehicles) do
                 Wait (100)
@@ -1072,7 +1098,7 @@ end)
 RegisterCommand('debuggarage', function(source, args)
     local garageId = args[1] or (currentGarage and currentGarage.id or "unknown")
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetJobGarageVehicles', function(vehicles)        
+    ESX.TriggerServerCallback('dw-garages:server:GetJobGarageVehicles', function(vehicles)        
         for i, v in ipairs(vehicles) do
             Wait (100)
         end
@@ -1080,7 +1106,7 @@ RegisterCommand('debuggarage', function(source, args)
         
         local currentGarageTest = currentGarage
         currentGarage = {id = garageId, type = "job"}
-        QBCore.Functions.Notify("Found " .. #vehicles .. " vehicles in " .. garageId .. " garage", "primary", 5000)
+        ESXNotify("Found " .. #vehicles .. " vehicles in " .. garageId .. " garage", "primary", 5000)
         
         currentGarage = currentGarageTest
     end, garageId)
@@ -1135,7 +1161,7 @@ function FadeOutVehicle(vehicle, callback)
             Wait(stepTime)
         end
         
-        QBCore.Functions.DeleteVehicle(vehicle)
+        DeleteVehicleESX(vehicle)
         
         if callback then callback() end
     end)
@@ -1267,7 +1293,7 @@ function FindClearSpawnPoint(spawnPoints)
 end
 
 function IsVehicleOwned(vehicle)
-    local plate = QBCore.Functions.GetPlate(vehicle)
+    local plate = GetVehiclePlate(vehicle)
     if not plate then return false end
     
     if vehicleOwnershipCache[plate] ~= nil then
@@ -1276,7 +1302,7 @@ function IsVehicleOwned(vehicle)
     
     vehicleOwnershipCache[plate] = false
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:CheckIfVehicleOwned', function(owned)
+    ESX.TriggerServerCallback('dw-garages:server:CheckIfVehicleOwned', function(owned)
         vehicleOwnershipCache[plate] = owned
     end, plate)
     
@@ -1369,7 +1395,7 @@ CreateThread(function()
                     local vehicleCoords = GetEntityCoords(vehicle)
                     local playerCoords = GetEntityCoords(ped)
                     local distToVehicle = #(playerCoords - vehicleCoords)
-                    local plate = QBCore.Functions.GetPlate(vehicle)
+                    local plate = GetVehiclePlate(vehicle)
                     
                     if not plate then goto skip_vehicle end
                     
@@ -1433,7 +1459,7 @@ CreateThread(function()
                     
                     local isOwned = vehicleOwnershipCache[plate]
                     if isOwned == nil then
-                        QBCore.Functions.TriggerCallback('dw-garages:server:CheckIfVehicleOwned', function(owned)
+                        ESX.TriggerServerCallback('dw-garages:server:CheckIfVehicleOwned', function(owned)
                             vehicleOwnershipCache[plate] = owned
                         end, plate)
                         isOwned = false
@@ -1502,9 +1528,9 @@ CreateThread(function()
             local currentVehicle = GetVehiclePedIsIn(ped, false)
             
             if currentVehicle > 0 and DoesEntityExist(currentVehicle) then
-                local plate = QBCore.Functions.GetPlate(currentVehicle)
+                local plate = GetVehiclePlate(currentVehicle)
                 if plate then
-                    QBCore.Functions.TriggerCallback('dw-garages:server:CheckJobAccess', function(hasAccess)
+                    ESX.TriggerServerCallback('dw-garages:server:CheckJobAccess', function(hasAccess)
                         if not hasAccess then
                             local isJobVehicle = false
                             local jobName = nil
@@ -1528,7 +1554,7 @@ CreateThread(function()
                             
                             if isJobVehicle and jobName ~= PlayerData.job.name then
                                 TaskLeaveVehicle(ped, currentVehicle, 0)
-                                QBCore.Functions.Notify("You don't have access to this job vehicle", "error")
+                                ESXNotify("You don't have access to this job vehicle", "error")
                             end
                         end
                     end, plate)
@@ -1766,7 +1792,7 @@ function OpenGarageUI(vehicles, garageInfo, garageType)
         end
     end
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetAllGarages', function(allGarages)
+    ESX.TriggerServerCallback('dw-garages:server:GetAllGarages', function(allGarages)
         SetNuiFocus(true, true)
         SendNUIMessage({
             action = "openGarage",
@@ -1817,23 +1843,23 @@ RegisterNetEvent('dw-garages:client:OpenGarage', function(data)
     local isImpoundLot = (garageType == "impound")
 
     if garageType == "public" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
             OpenGarageUI(vehicles or {}, garageInfo, garageType, isImpoundLot)
         end)
     elseif garageType == "job" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetJobGarageVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetJobGarageVehicles', function(vehicles)
             OpenGarageUI(vehicles or {}, garageInfo, garageType, isImpoundLot)
         end, garageId)
     elseif garageType == "gang" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetGangVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetGangVehicles', function(vehicles)
             OpenGarageUI(vehicles or {}, garageInfo, garageType, isImpoundLot)
         end, garageInfo.gang, garageId)
     elseif garageType == "shared" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetSharedGarageVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetSharedGarageVehicles', function(vehicles)
             OpenGarageUI(vehicles or {}, garageInfo, garageType, isImpoundLot)
         end, garageId)
     elseif garageType == "impound" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetImpoundedVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetImpoundedVehicles', function(vehicles)
             OpenGarageUI(vehicles or {}, garageInfo, garageType, isImpoundLot)
         end)
     end
@@ -1847,7 +1873,7 @@ function DebugJobGarage(garageId)
         return
     end
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
+    ESX.TriggerServerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
         
         local count = 0
         for i, vehicle in ipairs(vehicles) do
@@ -1919,14 +1945,14 @@ RegisterNUICallback('takeOutVehicle', function(data, cb)
     isMenuOpen = false
     
     if data.state == 0 then
-        QBCore.Functions.Notify("This vehicle is already out of the garage.", "error")
+        ESXNotify("This vehicle is already out of the garage.", "error")
         cb({status = "error", message = "Vehicle already out"})
         return
     end
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetVehicleByPlate', function(vehData, isOut)
+    ESX.TriggerServerCallback('dw-garages:server:GetVehicleByPlate', function(vehData, isOut)
         if isOut then
-            QBCore.Functions.Notify("This vehicle is already outside.", "error")
+            ESXNotify("This vehicle is already outside.", "error")
             cb({status = "error", message = "Vehicle already out"})
             return
         end
@@ -1951,18 +1977,18 @@ RegisterNUICallback('takeOutVehicle', function(data, cb)
         
         local clearPoint = FindClearSpawnPoint(spawnPoints)
         if not clearPoint then
-            QBCore.Functions.Notify("All spawn locations are blocked!", "error")
+            ESXNotify("All spawn locations are blocked!", "error")
             cb({status = "error", message = "Spawn locations blocked"})
             return
         end
         
         if currentGarage.type == "shared" then
-            QBCore.Functions.TriggerCallback('dw-garages:server:CheckSharedAccess', function(hasAccess)
+            ESX.TriggerServerCallback('dw-garages:server:CheckSharedAccess', function(hasAccess)
                 if hasAccess then
                     TriggerServerEvent('dw-garages:server:TakeOutSharedVehicle', plate, currentGarage.id)
                     cb({status = "success"})
                 else
-                    QBCore.Functions.Notify("You don't have access to this vehicle", "error")
+                    ESXNotify("You don't have access to this vehicle", "error")
                     cb({status = "error", message = "No access"})
                 end
             end, plate, currentGarage.id)
@@ -1971,9 +1997,9 @@ RegisterNUICallback('takeOutVehicle', function(data, cb)
         
         local spawnCoords = vector3(clearPoint.x, clearPoint.y, clearPoint.z)
         
-        QBCore.Functions.SpawnVehicle(model, function(veh)
+        SpawnVehicleESX(model, function(veh)
             if not veh or veh == 0 then
-                QBCore.Functions.Notify("Failed to spawn vehicle", "error")
+                ESXNotify("Failed to spawn vehicle", "error")
                 cb({status = "error", message = "Failed to spawn"})
                 return
             end
@@ -1985,9 +2011,9 @@ RegisterNUICallback('takeOutVehicle', function(data, cb)
             FadeInVehicle(veh)
             
             if currentGarage.type == "public" or currentGarage.type == "gang" then
-                QBCore.Functions.TriggerCallback('dw-garages:server:GetVehicleProperties', function(properties)
+                ESX.TriggerServerCallback('dw-garages:server:GetVehicleProperties', function(properties)
                     if properties then
-                        QBCore.Functions.SetVehicleProperties(veh, properties)
+                        SetVehiclePropertiesESX(veh, properties)
                         
                         local engineHealth = math.max(data.engine * 10, 900.0)
                         local bodyHealth = math.max(data.body * 10, 900.0)
@@ -2007,7 +2033,7 @@ RegisterNUICallback('takeOutVehicle', function(data, cb)
                             TriggerServerEvent('dw-garages:server:UpdateGangVehicleState', plate, 0)
                         end
                         
-                        QBCore.Functions.Notify("Vehicle taken out", "success")
+                        ESXNotify("Vehicle taken out", "success")
                         cb({status = "success"})
                     else
                         cb({status = "error", message = "Failed to load properties"})
@@ -2022,7 +2048,7 @@ RegisterNUICallback('takeOutVehicle', function(data, cb)
                 
                 FixEngineSmoke(veh)
                 
-                QBCore.Functions.Notify("Job vehicle taken out", "success")
+                ESXNotify("Job vehicle taken out", "success")
                 cb({status = "success"})
             end
         end, spawnCoords, true)
@@ -2034,17 +2060,17 @@ RegisterNetEvent('dw-garages:client:TakeOutSharedVehicle', function(plate, vehic
     local garageType = currentGarage.type
     
     if not garageId or not garageType then
-        QBCore.Functions.Notify("Garage information is missing", "error")
+        ESXNotify("Garage information is missing", "error")
         return
     end
     
     if not sharedGaragesData[garageId] then
-        QBCore.Functions.Notify("Shared garage data not found", "error")
+        ESXNotify("Shared garage data not found", "error")
         return
     end
     
     if not plate or not vehicleData then
-        QBCore.Functions.Notify("Vehicle data is incomplete", "error")
+        ESXNotify("Vehicle data is incomplete", "error")
         return
     end
     
@@ -2059,15 +2085,15 @@ RegisterNetEvent('dw-garages:client:TakeOutSharedVehicle', function(plate, vehic
     
     local clearPoint = FindClearSpawnPoint(spawnPoints)
     if not clearPoint then
-        QBCore.Functions.Notify("All spawn locations are blocked!", "error")
+        ESXNotify("All spawn locations are blocked!", "error")
         return
     end
     
     local spawnCoords = vector3(clearPoint.x, clearPoint.y, clearPoint.z)
     
-    QBCore.Functions.SpawnVehicle(vehicleData.vehicle, function(veh)
+    SpawnVehicleESX(vehicleData.vehicle, function(veh)
         if not veh or veh == 0 then
-            QBCore.Functions.Notify("Error creating shared vehicle. Please try again.", "error")
+            ESXNotify("Error creating shared vehicle. Please try again.", "error")
             return
         end
         
@@ -2077,9 +2103,9 @@ RegisterNetEvent('dw-garages:client:TakeOutSharedVehicle', function(plate, vehic
         
         FadeInVehicle(veh)
         
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetVehicleProperties', function(properties)
+        ESX.TriggerServerCallback('dw-garages:server:GetVehicleProperties', function(properties)
             if properties then
-                QBCore.Functions.SetVehicleProperties(veh, properties)
+                SetVehiclePropertiesESX(veh, properties)
                 
                 local engineHealth = math.max(vehicleData.engine, 900.0)
                 local bodyHealth = math.max(vehicleData.body, 900.0)
@@ -2093,9 +2119,9 @@ RegisterNetEvent('dw-garages:client:TakeOutSharedVehicle', function(plate, vehic
                 SetVehicleUndriveable(veh, false)
                 SetVehicleEngineOn(veh, true, true, false)
                 
-                QBCore.Functions.Notify("Vehicle taken out from shared garage", "success")
+                ESXNotify("Vehicle taken out from shared garage", "success")
             else
-                QBCore.Functions.Notify("Failed to load vehicle properties", "error")
+                ESXNotify("Failed to load vehicle properties", "error")
             end
         end, plate)
     end, spawnCoords, true)
@@ -2113,7 +2139,7 @@ function PlayVehicleTransferAnimation(plate, fromGarageId, toGarageId)
     
     if not garageInfo then 
         TriggerServerEvent('dw-garages:server:TransferVehicleToGarage', plate, toGarageId, Config.TransferCost or 500)
-        QBCore.Functions.Notify("Vehicle transferred", "success")
+        ESXNotify("Vehicle transferred", "success")
         return 
     end
     
@@ -2121,7 +2147,7 @@ function PlayVehicleTransferAnimation(plate, fromGarageId, toGarageId)
     
     if not garageInfo.transferSpawn or not garageInfo.transferArrival then
         TriggerServerEvent('dw-garages:server:TransferVehicleToGarage', plate, toGarageId, Config.TransferCost or 500)
-        QBCore.Functions.Notify("Vehicle transferred", "success")
+        ESXNotify("Vehicle transferred", "success")
         return
     end
     
@@ -2143,16 +2169,16 @@ function PlayVehicleTransferAnimation(plate, fromGarageId, toGarageId)
     
     if timeout >= 50 then
         TriggerServerEvent('dw-garages:server:TransferVehicleToGarage', plate, toGarageId, Config.TransferCost or 500)
-        QBCore.Functions.Notify("Vehicle transferred", "success")
+        ESXNotify("Vehicle transferred", "success")
         return
     end
     
-    QBCore.Functions.Notify("Vehicle transfer service is on the way...", "primary", 4000)
+    ESXNotify("Vehicle transfer service is on the way...", "primary", 4000)
     
-    QBCore.Functions.SpawnVehicle(truckModel, function(truck)
+    SpawnVehicleESX(truckModel, function(truck)
         if not DoesEntityExist(truck) then
             TriggerServerEvent('dw-garages:server:TransferVehicleToGarage', plate, toGarageId, Config.TransferCost or 500)
-            QBCore.Functions.Notify("Vehicle transferred", "success")
+            ESXNotify("Vehicle transferred", "success")
             return
         end
         
@@ -2165,7 +2191,7 @@ function PlayVehicleTransferAnimation(plate, fromGarageId, toGarageId)
         if not DoesEntityExist(driver) then
             DeleteEntity(truck)
             TriggerServerEvent('dw-garages:server:TransferVehicleToGarage', plate, toGarageId, Config.TransferCost or 500)
-            QBCore.Functions.Notify("Vehicle transferred", "success")
+            ESXNotify("Vehicle transferred", "success")
             return
         end
         
@@ -2274,11 +2300,11 @@ function PlayVehicleTransferAnimation(plate, fromGarageId, toGarageId)
                 TaskVehicleTempAction(driver, truck, 27, 10000) 
                 SetVehicleIndicatorLights(truck, 0, true)
                 SetVehicleIndicatorLights(truck, 1, true)
-                QBCore.Functions.Notify("Loading your vehicle onto the transfer truck...", "primary", 4000)
+                ESXNotify("Loading your vehicle onto the transfer truck...", "primary", 4000)
                 PlaySoundFromEntity(-1, "VEHICLES_TRAILER_ATTACH", truck, 0, 0, 0)
                 Wait(5000)
                 TriggerServerEvent('dw-garages:server:TransferVehicleToGarage', plate, toGarageId, Config.TransferCost or 500)
-                QBCore.Functions.Notify("Vehicle transferred successfully!", "success")
+                ESXNotify("Vehicle transferred successfully!", "success")
                 SetVehicleIndicatorLights(truck, 0, false)
                 SetVehicleIndicatorLights(truck, 1, false)
                 local driveToExit = false
@@ -2462,7 +2488,7 @@ RegisterNetEvent("dw-garages:client:PlayTransferAnimation", function(plate, newG
     end
     
     if not newGarageInfoFound then
-        QBCore.Functions.Notify("Target garage not found", "error")
+        ESXNotify("Target garage not found", "error")
         isTransferringVehicle = false
         transferAnimationActive = false
         currentTransferVehicle = nil
@@ -2476,7 +2502,7 @@ RegisterNetEvent("dw-garages:client:PlayTransferAnimation", function(plate, newG
         Wait(100)
     end
     TaskPlayAnim(ped, animDict, animName, 2.0, 2.0, -1, 51, 0, false, false, false)
-    QBCore.Functions.Notify("Arranging vehicle transfer...", "primary", 3000)
+    ESXNotify("Arranging vehicle transfer...", "primary", 3000)
     Wait(3000)
     animDict = "missheistdockssetup1clipboard@base"
     animName = "base"
@@ -2485,7 +2511,7 @@ RegisterNetEvent("dw-garages:client:PlayTransferAnimation", function(plate, newG
         Wait(100)
     end
     TaskPlayAnim(ped, animDict, animName, 2.0, 2.0, -1, 51, 0, false, false, false)
-    QBCore.Functions.Notify("Signing transfer papers...", "primary", 3000)
+    ESXNotify("Signing transfer papers...", "primary", 3000)
     Wait(3000)
     ClearPedTasks(ped)
     TriggerServerEvent('dw-garages:server:TransferVehicleToGarage', plate, newGarageId, Config.TransferCost or 500)
@@ -2496,10 +2522,10 @@ RegisterNetEvent("dw-garages:client:PlayTransferAnimation", function(plate, newG
 end)
 
 RegisterNetEvent('dw-garages:client:TransferComplete', function(newGarageId, plate)
-    QBCore.Functions.Notify("Vehicle transferred to " .. newGarageId .. " garage", "success")
+    ESXNotify("Vehicle transferred to " .. newGarageId .. " garage", "success")
     
     if currentGarage and isMenuOpen then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
             if vehicles then
                 SendNUIMessage({
                     action = "refreshVehicles",
@@ -2570,9 +2596,9 @@ RegisterNUICallback('removeFromShared', function(data, cb)
 end)
 
 function OpenSharedGarageSelectionUI(plate)
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetSharedGarages', function(garages)
+    ESX.TriggerServerCallback('dw-garages:server:GetSharedGarages', function(garages)
         if #garages == 0 then
-            QBCore.Functions.Notify("You don't have access to any shared garages", "error")
+            ESXNotify("You don't have access to any shared garages", "error")
             return
         end
         
@@ -2681,7 +2707,7 @@ RegisterNetEvent('dw-garages:client:StoreVehicle', function(data)
     end
     
     if not garageId or not garageType then
-        QBCore.Functions.Notify("Not in a valid parking zone", "error")
+        ESXNotify("Not in a valid parking zone", "error")
         return
     end
     
@@ -2694,7 +2720,7 @@ RegisterNetEvent('dw-garages:client:StoreVehicle', function(data)
     end
     
     if not garageInfo then
-        QBCore.Functions.Notify("Invalid garage", "error")
+        ESXNotify("Invalid garage", "error")
         return
     end
     
@@ -2706,32 +2732,32 @@ RegisterNetEvent('dw-garages:client:StoreVehicle', function(data)
         curVeh = GetClosestVehicleInGarage(garageCoords, 15.0)
         
         if curVeh == 0 or not DoesEntityExist(curVeh) then
-            QBCore.Functions.Notify("No vehicle found nearby to park", "error")
+            ESXNotify("No vehicle found nearby to park", "error")
             return
         end
         
         if GetVehicleNumberOfPassengers(curVeh) > 0 or not IsVehicleSeatFree(curVeh, -1) then
-            QBCore.Functions.Notify("Vehicle cannot be stored while occupied", "error")
+            ESXNotify("Vehicle cannot be stored while occupied", "error")
             return
         end
     end
     
     currentGarage = {id = garageId, type = garageType}
     
-    local plate = QBCore.Functions.GetPlate(curVeh)
-    local props = QBCore.Functions.GetVehicleProperties(curVeh)
+    local plate = GetVehiclePlate(curVeh)
+    local props = GetVehiclePropertiesESX(curVeh)
     local fuel = exports['LegacyFuel']:GetFuel(curVeh)
     local engineHealth = GetVehicleEngineHealth(curVeh)
     local bodyHealth = GetVehicleBodyHealth(curVeh)
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:CheckOwnership', function(isOwner, isInGarage)
+    ESX.TriggerServerCallback('dw-garages:server:CheckOwnership', function(isOwner, isInGarage)
         if isOwner or (garageType == "gang" and isInGarage) then
             FadeOutVehicle(curVeh, function()
                 TriggerServerEvent('dw-garages:server:StoreVehicle', plate, garageId, props, fuel, engineHealth, bodyHealth, garageType)
-                QBCore.Functions.Notify("Vehicle stored in garage", "success")
+                ESXNotify("Vehicle stored in garage", "success")
                 
                 if isMenuOpen then
-                    QBCore.Functions.TriggerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
+                    ESX.TriggerServerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
                         if vehicles then
                             SendNUIMessage({
                                 action = "refreshVehicles",
@@ -2742,7 +2768,7 @@ RegisterNetEvent('dw-garages:client:StoreVehicle', function(data)
                 end
             end)
         else
-            QBCore.Functions.Notify("You don't own this vehicle", "error")
+            ESXNotify("You don't own this vehicle", "error")
         end
     end, plate, garageType)
 end)
@@ -2766,7 +2792,7 @@ AddEventHandler('dw-garages:client:ManageSharedGarages', function()
         return
     end
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:CheckSharedGaragesTables', function(tablesExist)
+    ESX.TriggerServerCallback('dw-garages:server:CheckSharedGaragesTables', function(tablesExist)
         if not tablesExist then
             TriggerServerEvent('dw-garages:server:CreateSharedGaragesTables')
             
@@ -2779,7 +2805,7 @@ AddEventHandler('dw-garages:client:ManageSharedGarages', function()
             return
         end
         
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetSharedGarages', function(garages)
+        ESX.TriggerServerCallback('dw-garages:server:GetSharedGarages', function(garages)
             sharedGaragesData = {}
             
             local formattedGarages = {}
@@ -2826,12 +2852,12 @@ RegisterNUICallback('createSharedGarage', function(data, cb)
         return
     end
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:CreateSharedGarage', function(success, result)
+    ESX.TriggerServerCallback('dw-garages:server:CreateSharedGarage', function(success, result)
         if success then
-            QBCore.Functions.Notify("Shared garage created successfully. Code: " .. result.code, "success")
+            ESXNotify("Shared garage created successfully. Code: " .. result.code, "success")
             cb({status = "success", garageData = result})
         else
-            QBCore.Functions.Notify(result, "error")
+            ESXNotify(result, "error")
             cb({status = "error", message = result})
         end
     end, garageName)
@@ -2882,7 +2908,7 @@ RegisterNUICallback('manageSharedGarageMembers', function(data, cb)
         return
     end
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetSharedGarageMembers', function(members)
+    ESX.TriggerServerCallback('dw-garages:server:GetSharedGarageMembers', function(members)
         if members then
             SendNUIMessage({
                 action = "openSharedGarageMembersManager",
@@ -2924,7 +2950,7 @@ end)
 RegisterNetEvent('dw-garages:client:ReceiveJoinRequest', function(data)
     table.insert(pendingJoinRequests, data)
     
-    QBCore.Functions.Notify(data.requesterName .. " wants to join your " .. data.garageName .. " garage", "primary", 10000)
+    ESXNotify(data.requesterName .. " wants to join your " .. data.garageName .. " garage", "primary", 10000)
     
     SetNuiFocus(true, true)
     SendNUIMessage({
@@ -2972,7 +2998,7 @@ RegisterNetEvent('dw-garages:client:RefreshVehicleList', function()
     local garageType = currentGarage.type
     
     if garageType == "public" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
             if vehicles then
                 SendNUIMessage({
                     action = "refreshVehicles",
@@ -2981,7 +3007,7 @@ RegisterNetEvent('dw-garages:client:RefreshVehicleList', function()
             end
         end, garageId)
     elseif garageType == "gang" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetGangVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetGangVehicles', function(vehicles)
             if vehicles then
                 SendNUIMessage({
                     action = "refreshVehicles",
@@ -2990,7 +3016,7 @@ RegisterNetEvent('dw-garages:client:RefreshVehicleList', function()
             end
         end, PlayerData.gang.name, garageId)
     elseif garageType == "shared" then
-        QBCore.Functions.TriggerCallback('dw-garages:server:GetSharedGarageVehicles', function(vehicles)
+        ESX.TriggerServerCallback('dw-garages:server:GetSharedGarageVehicles', function(vehicles)
             if vehicles then
                 SendNUIMessage({
                     action = "refreshVehicles",
@@ -3008,7 +3034,7 @@ RegisterNetEvent('dw-garages:client:VehicleTransferCompleted', function(successf
             local garageType = currentGarage.type
             
             if garageType == "public" then
-                QBCore.Functions.TriggerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
+                ESX.TriggerServerCallback('dw-garages:server:GetPersonalVehicles', function(vehicles)
                     if vehicles then
                         SendNUIMessage({
                             action = "refreshVehicles",
@@ -3017,7 +3043,7 @@ RegisterNetEvent('dw-garages:client:VehicleTransferCompleted', function(successf
                     end
                 end, garageId)
             elseif garageType == "shared" then
-                QBCore.Functions.TriggerCallback('dw-garages:server:GetSharedGarageVehicles', function(vehicles)
+                ESX.TriggerServerCallback('dw-garages:server:GetSharedGarageVehicles', function(vehicles)
                     if vehicles then
                         SendNUIMessage({
                             action = "refreshVehicles",
@@ -3063,7 +3089,7 @@ function GetVehicleHoverInfo(vehicle)
     if not DoesEntityExist(vehicle) then return nil end
     
     local ped = PlayerPedId()
-    local plate = QBCore.Functions.GetPlate(vehicle)
+    local plate = GetVehiclePlate(vehicle)
     local model = GetEntityModel(vehicle)
     local displayName = GetDisplayNameFromVehicleModel(model)
     local make = GetMakeNameFromVehicleModel(model)
@@ -3085,7 +3111,7 @@ function GetVehicleHoverInfo(vehicle)
     end
     
     local vehicleInfo = nil
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetVehicleInfo', function(info)
+    ESX.TriggerServerCallback('dw-garages:server:GetVehicleInfo', function(info)
         vehicleInfo = info
     end, plate)
     
@@ -3177,7 +3203,7 @@ RegisterNUICallback('storeHoveredVehicle', function(data, cb)
             StoreVehicleInGarage(vehicle, garageId, garageType)
             cb({status = "success"})
         else
-            QBCore.Functions.Notify("Not near a garage", "error")
+            ESXNotify("Not near a garage", "error")
             cb({status = "error", message = "Not near a garage"})
         end
     else
@@ -3243,8 +3269,8 @@ function GetClosestGarage()
 end
 
 function StoreVehicleInGarage(vehicle, garageId, garageType)
-    local plate = QBCore.Functions.GetPlate(vehicle)
-    local props = QBCore.Functions.GetVehicleProperties(vehicle)
+    local plate = GetVehiclePlate(vehicle)
+    local props = GetVehiclePropertiesESX(vehicle)
     local fuel = 0
     
     if GetResourceState('LegacyFuel') ~= 'missing' then
@@ -3262,7 +3288,7 @@ function StoreVehicleInGarage(vehicle, garageId, garageType)
     
     FadeOutVehicle(vehicle, function()
         TriggerServerEvent('dw-garages:server:StoreVehicle', plate, garageId, props, fuel, engineHealth, bodyHealth, garageType)
-        QBCore.Functions.Notify("Vehicle stored in garage", "success")
+        ESXNotify("Vehicle stored in garage", "success")
     end)
 end
 
@@ -3292,13 +3318,13 @@ AddEventHandler('dw-garages:client:OpenImpoundLot', function(data)
     local impoundInfo = Config.ImpoundLots[impoundId]
     
     if not impoundInfo then
-        QBCore.Functions.Notify("Invalid impound lot", "error")
+        ESXNotify("Invalid impound lot", "error")
         return
     end
     
     currentImpoundLot = {id = impoundId, label = impoundInfo.label, coords = impoundInfo.coords}
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:GetImpoundedVehicles', function(vehicles)
+    ESX.TriggerServerCallback('dw-garages:server:GetImpoundedVehicles', function(vehicles)
         if vehicles and #vehicles > 0 then
             SetNuiFocus(true, true)
             SendNUIMessage({
@@ -3316,14 +3342,14 @@ AddEventHandler('dw-garages:client:OpenImpoundLot', function(data)
                 }
             })
         else
-            QBCore.Functions.Notify("No vehicles in impound", "error")
+            ESXNotify("No vehicles in impound", "error")
         end
     end)
 end)
 
 RegisterCommand('impound', function(source, args)
     if not PlayerData.job or not Config.ImpoundJobs[PlayerData.job.name] then
-        QBCore.Functions.Notify("You are not authorized to impound vehicles", "error")
+        ESXNotify("You are not authorized to impound vehicles", "error")
         return
     end
     
@@ -3342,27 +3368,24 @@ RegisterCommand('impound', function(source, args)
     end
     
     if not DoesEntityExist(vehicle) then
-        QBCore.Functions.Notify("No vehicle nearby to impound", "error")
+        ESXNotify("No vehicle nearby to impound", "error")
         return
     end
     
-    local plate = QBCore.Functions.GetPlate(vehicle)
+    local plate = GetVehiclePlate(vehicle)
     if not plate then
-        QBCore.Functions.Notify("Could not read vehicle plate", "error")
+        ESXNotify("Could not read vehicle plate", "error")
         return
     end
     
-    local props = QBCore.Functions.GetVehicleProperties(vehicle)
+    local props = GetVehiclePropertiesESX(vehicle)
     
-    local dialog = exports['qb-input']:ShowInput({
-        header = "Impound Vehicle",
-        submitText = "Submit",
-        inputs = {
-            {
-                text = "Reason for impound",
-                name = "reason", 
-                type = "text"
-            }
+    local dialog = ShowInputDialog("Impound Vehicle", {
+        {
+            type = 'input',
+            label = 'Reason for impound',
+            name = 'reason',
+            required = true
         }
     })
     
@@ -3370,7 +3393,7 @@ RegisterCommand('impound', function(source, args)
         local impoundType = "police"
         
         TaskStartScenarioInPlace(ped, "PROP_HUMAN_CLIPBOARD", 0, true)
-        QBCore.Functions.Progressbar("impounding_vehicle", "Impounding Vehicle...", 10000, false, true, {
+        ShowProgressBar("Impounding Vehicle...", 10000, {
             disableMovement = true,
             disableCarMovement = true,
             disableMouse = false,
@@ -3383,11 +3406,11 @@ RegisterCommand('impound', function(source, args)
             
             FadeOutVehicle(vehicle, function()
                 DeleteVehicle(vehicle)
-                QBCore.Functions.Notify("Vehicle impounded with $" .. impoundFine .. " fine", "success")
+                ESXNotify("Vehicle impounded with $" .. impoundFine .. " fine", "success")
             end)
         end, function() 
             ClearPedTasks(ped)
-            QBCore.Functions.Notify("Impound cancelled", "error")
+            ESXNotify("Impound cancelled", "error")
         end)
     end
 end, false)
@@ -3401,44 +3424,43 @@ function OpenImpoundUI(vehicles, impoundInfo, impoundId)
     local formattedVehicles = {}
    
     for i, vehicle in ipairs(vehicles) do
-        local vehicleInfo = QBCore.Shared.Vehicles[vehicle.vehicle]
-        if vehicleInfo then
-            local enginePercent = round(vehicle.engine / 10, 1)
-            local bodyPercent = round(vehicle.body / 10, 1)
-            local fuelPercent = vehicle.fuel or 100
-           
-            local displayName = vehicleInfo.name
-            if vehicle.custom_name and vehicle.custom_name ~= "" then
-                displayName = vehicle.custom_name
-            end
-           
-            local totalFee = Config.ImpoundFee 
-            if vehicle.impoundfee ~= nil then
-                local customFee = tonumber(vehicle.impoundfee)
-                if customFee and customFee > 0 then
-                    totalFee = customFee
-                end
-            end
-           
-            local reasonString = vehicle.impoundreason or "No reason specified"
-            if reasonString and #reasonString > 50 then
-                reasonString = reasonString:sub(1, 47) .. "..."
-            end
-           
-            table.insert(formattedVehicles, {
-                id = i,
-                plate = vehicle.plate,
-                model = vehicle.vehicle,
-                name = displayName,
-                fuel = fuelPercent,
-                engine = enginePercent,
-                body = bodyPercent,
-                impoundFee = totalFee,
-                impoundReason = reasonString,
-                impoundType = vehicle.impoundtype or "police",
-                impoundedBy = vehicle.impoundedby or "Unknown Officer"
-            })
+        -- Use GetVehicleDisplayName instead of QBCore.Shared.Vehicles
+        local displayName = GetVehicleDisplayName(vehicle.vehicle)
+        
+        local enginePercent = round(vehicle.engine / 10, 1)
+        local bodyPercent = round(vehicle.body / 10, 1)
+        local fuelPercent = vehicle.fuel or 100
+        
+        if vehicle.custom_name and vehicle.custom_name ~= "" then
+            displayName = vehicle.custom_name
         end
+        
+        local totalFee = Config.ImpoundFee 
+        if vehicle.impoundfee ~= nil then
+            local customFee = tonumber(vehicle.impoundfee)
+            if customFee and customFee > 0 then
+                totalFee = customFee
+            end
+        end
+        
+        local reasonString = vehicle.impoundreason or "No reason specified"
+        if reasonString and #reasonString > 50 then
+            reasonString = reasonString:sub(1, 47) .. "..."
+        end
+        
+        table.insert(formattedVehicles, {
+            id = i,
+            plate = vehicle.plate,
+            model = vehicle.vehicle,
+            name = displayName,
+            fuel = fuelPercent,
+            engine = enginePercent,
+            body = bodyPercent,
+            impoundFee = totalFee,
+            impoundReason = reasonString,
+            impoundType = vehicle.impoundtype or "police",
+            impoundedBy = vehicle.impoundedby or "Unknown Officer"
+        })
     end
    
     SetNuiFocus(true, true)
@@ -3463,20 +3485,20 @@ RegisterNUICallback('releaseImpoundedVehicle', function(data, cb)
         return
     end
     
-    QBCore.Functions.TriggerCallback('dw-garages:server:CanPayImpoundFee', function(canPay)
+    ESX.TriggerServerCallback('dw-garages:server:CanPayImpoundFee', function(canPay)
         if canPay then
             local impoundInfo = Config.ImpoundLots[impoundId]
             local spawnPoint = FindClearSpawnPoint(impoundInfo.spawnPoints)
             
             if not spawnPoint then
-                QBCore.Functions.Notify("All spawn locations are blocked!", "error")
+                ESXNotify("All spawn locations are blocked!", "error")
                 cb({status = "error", message = "Spawn blocked"})
                 return
             end
             
-            QBCore.Functions.TriggerCallback('dw-garages:server:GetVehicleByPlate', function(vehData)
+            ESX.TriggerServerCallback('dw-garages:server:GetVehicleByPlate', function(vehData)
                 if vehData then
-                    QBCore.Functions.SpawnVehicle(vehData.vehicle, function(veh)
+                    SpawnVehicleESX(vehData.vehicle, function(veh)
                         SetEntityHeading(veh, spawnPoint.w)
                         SetEntityCoords(veh, spawnPoint.x, spawnPoint.y, spawnPoint.z)
                         
@@ -3485,9 +3507,9 @@ RegisterNUICallback('releaseImpoundedVehicle', function(data, cb)
                         
                         FadeInVehicle(veh)
                         
-                        QBCore.Functions.TriggerCallback('dw-garages:server:GetVehicleProperties', function(properties)
+                        ESX.TriggerServerCallback('dw-garages:server:GetVehicleProperties', function(properties)
                             if properties then
-                                QBCore.Functions.SetVehicleProperties(veh, properties)
+                                SetVehiclePropertiesESX(veh, properties)
                                 
                                 local engineHealth = math.max(vehData.engine * 10, 200.0)
                                 local bodyHealth = math.max(vehData.body * 10, 200.0)
@@ -3503,21 +3525,21 @@ RegisterNUICallback('releaseImpoundedVehicle', function(data, cb)
                                 
                                 TriggerServerEvent('dw-garages:server:PayImpoundFee', plate, fee)
                                 
-                                QBCore.Functions.Notify("Vehicle released from impound", "success")
+                                ESXNotify("Vehicle released from impound", "success")
                                 cb({status = "success"})
                             else
-                                QBCore.Functions.Notify("Failed to load vehicle properties", "error")
+                                ESXNotify("Failed to load vehicle properties", "error")
                                 cb({status = "error", message = "Failed to load vehicle"})
                             end
                         end, plate)
                     end, vector3(spawnPoint.x, spawnPoint.y, spawnPoint.z), true)
                 else
-                    QBCore.Functions.Notify("Vehicle data not found", "error")
+                    ESXNotify("Vehicle data not found", "error")
                     cb({status = "error", message = "Vehicle not found"})
                 end
             end, plate)
         else
-            QBCore.Functions.Notify("You don't have enough money to pay the impound fee", "error")
+            ESXNotify("You don't have enough money to pay the impound fee", "error")
             cb({status = "error", message = "Insufficient funds"})
         end
     end, fee)
@@ -3526,7 +3548,7 @@ end)
 RegisterNetEvent('dw-garages:client:ImpoundVehicle')
 AddEventHandler('dw-garages:client:ImpoundVehicle', function()
     if not PlayerData.job or not Config.ImpoundJobs[PlayerData.job.name] then
-        QBCore.Functions.Notify("You are not authorized to impound vehicles", "error")
+        ESXNotify("You are not authorized to impound vehicles", "error")
         return
     end
     
@@ -3541,60 +3563,64 @@ AddEventHandler('dw-garages:client:ImpoundVehicle', function()
     end
     
     if not DoesEntityExist(vehicle) then
-        QBCore.Functions.Notify("No vehicle nearby to impound", "error")
+        ESXNotify("No vehicle nearby to impound", "error")
         return
     end
     
-    local plate = QBCore.Functions.GetPlate(vehicle)
+    local plate = GetVehiclePlate(vehicle)
     if not plate then
-        QBCore.Functions.Notify("Could not read vehicle plate", "error")
+        ESXNotify("Could not read vehicle plate", "error")
         return
     end
     
-    local props = QBCore.Functions.GetVehicleProperties(vehicle)
+    local props = GetVehiclePropertiesESX(vehicle)
     local model = GetEntityModel(vehicle)
     local displayName = GetDisplayNameFromVehicleModel(model)
     local impoundType = "police"
     
-    local dialog = exports['qb-input']:ShowInput({
-        header = "Impound Vehicle",
-        submitText = "Submit",
-        inputs = {
-            {
-                text = "Reason for Impound",
-                name = "reason",
-                type = "text",
-                isRequired = true
-            },
-            {
-                text = "Impound Type",
-                name = "type",
-                type = "select",
-                options = Config.ImpounderTypes,
-                default = "police"
-            }
+    local dialog = ShowInputDialog("Impound Vehicle", {
+        {
+            type = 'input',
+            label = 'Reason for Impound',
+            name = 'reason',
+            required = true
+        },
+        {
+            type = 'select',
+            label = 'Impound Type',
+            name = 'type',
+            options = (function()
+                local opts = {}
+                for k, v in pairs(Config.ImpounderTypes) do
+                    table.insert(opts, {value = k, label = v})
+                end
+                return opts
+            end)(),
+            default = 'police'
         }
     })
     
     if dialog and dialog.reason then
         TaskStartScenarioInPlace(ped, "PROP_HUMAN_CLIPBOARD", 0, true)
-        QBCore.Functions.Progressbar("impounding_vehicle", "Impounding Vehicle...", 10000, false, true, {
+        ShowProgressBar("Impounding Vehicle...", 10000, {
             disableMovement = true,
             disableCarMovement = true,
             disableMouse = false,
             disableCombat = true,
-        }, {}, {}, {}, function() 
+        }, function() 
             ClearPedTasks(ped)
             
-            TriggerServerEvent('dw-garages:server:ImpoundVehicle', plate, props, dialog.reason, dialog.type, PlayerData.job.name, PlayerData.charinfo.firstname .. " " .. PlayerData.charinfo.lastname)
+            -- Get player name from ESX
+            local playerName = PlayerData.firstName and PlayerData.lastName and (PlayerData.firstName .. " " .. PlayerData.lastName) or "Unknown"
+            TriggerServerEvent('dw-garages:server:ImpoundVehicle', plate, props, dialog.reason, dialog.type, PlayerData.job.name, playerName)
             
             FadeOutVehicle(vehicle, function()
                 DeleteVehicle(vehicle)
-                QBCore.Functions.Notify("Vehicle impounded successfully", "success")
+                ESXNotify("Vehicle impounded successfully", "success")
             end)
         end, function() 
             ClearPedTasks(ped)
-            QBCore.Functions.Notify("Impound cancelled", "error")
+            ESXNotify("Impound cancelled", "error")
         end)
     end
 end)
