@@ -91,11 +91,11 @@ function GetVehicleFuel(vehicle)
     -- Get fuel level with proper fallback to different fuel systems
     local fuelLevel = 0
     
-    if GetResourceState('LegacyFuel') ~= 'missing' then
+    if GetResourceState('LegacyFuel') == 'started' then
         fuelLevel = exports['LegacyFuel']:GetFuel(vehicle)
-    elseif GetResourceState('ps-fuel') ~= 'missing' then
+    elseif GetResourceState('ps-fuel') == 'started' then
         fuelLevel = exports['ps-fuel']:GetFuel(vehicle)
-    elseif GetResourceState('qb-fuel') ~= 'missing' then
+    elseif GetResourceState('qb-fuel') == 'started' then
         fuelLevel = exports['qb-fuel']:GetFuel(vehicle)
     else
         fuelLevel = GetVehicleFuelLevel(vehicle)
@@ -106,11 +106,11 @@ end
 
 function SetVehicleFuel(vehicle, fuelLevel)
     -- Set fuel level with proper fallback to different fuel systems
-    if GetResourceState('LegacyFuel') ~= 'missing' then
+    if GetResourceState('LegacyFuel') == 'started' then
         exports['LegacyFuel']:SetFuel(vehicle, fuelLevel)
-    elseif GetResourceState('ps-fuel') ~= 'missing' then
+    elseif GetResourceState('ps-fuel') == 'started' then
         exports['ps-fuel']:SetFuel(vehicle, fuelLevel)
-    elseif GetResourceState('qb-fuel') ~= 'missing' then
+    elseif GetResourceState('qb-fuel') == 'started' then
         exports['qb-fuel']:SetFuel(vehicle, fuelLevel)
     else
         SetVehicleFuelLevel(vehicle, fuelLevel)
