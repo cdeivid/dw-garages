@@ -948,14 +948,15 @@ function FormatVehiclesForNUI(vehicles)
     local formattedVehicles = {}
     local currentGarageId = currentGarage and currentGarage.id or nil    
     for i, vehicle in ipairs(vehicles) do
-        -- Use GetVehicleDisplayName instead of QBCore.Shared.Vehicles
-        local displayName = GetVehicleDisplayName(vehicle.vehicle)
+        -- Use enriched display_name from server if available, otherwise fallback to GetVehicleDisplayName
+        local displayName = vehicle.display_name or GetVehicleDisplayName(vehicle.vehicle)
         
         -- Add nil checks for engine, body, and fuel with default values
         local enginePercent = round((vehicle.engine or 1000) / 10, 1)
         local bodyPercent = round((vehicle.body or 1000) / 10, 1)
         local fuelPercent = vehicle.fuel or 100
         
+        -- Custom name takes priority
         if vehicle.custom_name and vehicle.custom_name ~= "" then
             displayName = vehicle.custom_name
         end
@@ -997,6 +998,8 @@ function FormatVehiclesForNUI(vehicles)
                 plate = vehicle.plate,
                 model = vehicle.vehicle,
                 name = displayName,
+                category = vehicle.category or "Unknown",
+                topSpeed = vehicle.top_speed or 0,
                 fuel = fuelPercent,
                 engine = enginePercent,
                 body = bodyPercent,

@@ -7,7 +7,55 @@ local occupiedJobParkingSpots = {}
 local trackedJobVehicles = {}
 local jobVehicles = {}
 
+-- okokvehicleshopv2 Integration Functions
+-- Get vehicle details from okokvehicleshopv2 export
+function GetVehicleDetailsFromShop(model)
+    if GetResourceState('okokvehicleshopv2') == 'started' then
+        -- Call okokvehicleshopv2 export to get vehicle details
+        local success, vehicleData = pcall(function()
+            return exports['okokvehicleshopv2']:getVehicleName(model)
+        end)
+        
+        if success and vehicleData then
+            return vehicleData
+        end
+    end
+    
+    -- Fallback to basic vehicle name if export not available
+    return {
+        name = GetDisplayNameFromVehicleModel(GetHashKey(model)) or model,
+        category = "Unknown",
+        speed = 0,
+        model = model
+    }
+end
 
+-- Event handler for vehicle purchases from okokvehicleshopv2
+RegisterNetEvent('okokvehicleshop:vehiclePurchased', function(vehicleData)
+    local src = source
+    local xPlayer = ESX.GetPlayerFromId(src)
+    if not xPlayer then return end
+    
+    local plate = vehicleData.plate
+    local model = vehicleData.model
+    local garage = vehicleData.garage or 'legion' -- Default garage
+    
+    -- Get vehicle details from shop
+    local vehicleInfo = GetVehicleDetailsFromShop(model)
+    
+    -- Update or verify vehicle in database
+    MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE plate = ?', {plate}, function(result)
+        if result and #result > 0 then
+            -- Vehicle already exists, just ensure it's set correctly
+            print('[DW Garages] Vehicle purchase synchronized: ' .. plate .. ' (' .. vehicleInfo.name .. ')')
+        end
+    end)
+end)
+
+-- Export function to get enriched vehicle data
+exports('getEnrichedVehicleData', function(model)
+    return GetVehicleDetailsFromShop(model)
+end)
 
 ESX.RegisterServerCallback('dw-garages:server:GetPersonalVehicles', function(source, cb, garageId)
     local xPlayer = ESX.GetPlayerFromId(source)
@@ -26,6 +74,15 @@ ESX.RegisterServerCallback('dw-garages:server:GetPersonalVehicles', function(sou
     MySQL.Async.fetchAll(query, params, function(result)
         if result[1] then
             for i, vehicle in ipairs(result) do
+                -- Enrich vehicle data with details from okokvehicleshopv2
+                if not vehicle.custom_name or vehicle.custom_name == "" then
+                    local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+                    vehicle.display_name = vehicleInfo.name
+                    vehicle.category = vehicleInfo.category
+                    vehicle.top_speed = vehicleInfo.speed
+                else
+                    vehicle.display_name = vehicle.custom_name
+                end
             end
             cb(result)
         else
@@ -41,6 +98,15 @@ ESX.RegisterServerCallback('dw-garages:server:GetVehiclesByGarage', function(sou
     MySQL.Async.fetchAll('SELECT * FROM owned_vehicles WHERE garage = ?', {garageId}, function(result)
         if result and #result > 0 then
             for i, vehicle in ipairs(result) do
+                -- Enrich vehicle data with details from okokvehicleshopv2
+                if not vehicle.custom_name or vehicle.custom_name == "" then
+                    local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+                    vehicle.display_name = vehicleInfo.name
+                    vehicle.category = vehicleInfo.category
+                    vehicle.top_speed = vehicleInfo.speed
+                else
+                    vehicle.display_name = vehicle.custom_name
+                end
             end
             cb(result)
         else
@@ -61,10 +127,28 @@ ESX.RegisterServerCallback('dw-garages:server:GetGangVehicles', function(source,
             local allVehicles = {}
             
             for _, vehicle in ipairs(personalResult) do
+                -- Enrich vehicle data with details from okokvehicleshopv2
+                if not vehicle.custom_name or vehicle.custom_name == "" then
+                    local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+                    vehicle.display_name = vehicleInfo.name
+                    vehicle.category = vehicleInfo.category
+                    vehicle.top_speed = vehicleInfo.speed
+                else
+                    vehicle.display_name = vehicle.custom_name
+                end
                 table.insert(allVehicles, vehicle)
             end
             
             for _, vehicle in ipairs(gangResult) do
+                -- Enrich vehicle data with details from okokvehicleshopv2
+                if not vehicle.custom_name or vehicle.custom_name == "" then
+                    local vehicleInfo = GetVehicleDetailsFromShop(vehicle.vehicle)
+                    vehicle.display_name = vehicleInfo.name
+                    vehicle.category = vehicleInfo.category
+                    vehicle.top_speed = vehicleInfo.speed
+                else
+                    vehicle.display_name = vehicle.custom_name
+                end
                 table.insert(allVehicles, vehicle)
             end
             

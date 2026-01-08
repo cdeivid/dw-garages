@@ -22,7 +22,22 @@
 - **Search Functionality** - Quickly find specific vehicles in large collections
 - **Category Filtering** - Filter by vehicle type, favorites, or ownership
 - **Impound System** - Full impound functionality for law enforcement with reason logging and fees
+- **Vehicle Shop Integration** - Compatible with okokvehicleshopv2 for seamless vehicle purchase synchronization
 - **Full Customization** - Easily configure all aspects through the config.lua file
+
+## 🔗 Integrations
+
+### okokvehicleshopv2 Integration
+
+DW Garages includes built-in support for `okokvehicleshopv2` to:
+- Automatically register purchased vehicles
+- Display correct vehicle names (no more "CAR NOT FOUND")
+- Show vehicle categories and performance data
+- Seamlessly sync purchases between shop and garage
+
+**Setup Instructions**: See [OKOKVEHICLESHOP_INTEGRATION.md](OKOKVEHICLESHOP_INTEGRATION.md) for detailed integration guide.
+
+**Example Files**: Check the `examples/okokvehicleshopv2/` directory for implementation examples.
 
 ## 📋 Requirements
 
@@ -30,6 +45,7 @@
 - oxmysql
 - ox_lib (for input dialogs and progress bars)
 - LegacyFuel (or compatible fuel script)
+- (Optional) okokvehicleshopv2 - for vehicle shop integration
 
 ## 🔧 Installation
 
